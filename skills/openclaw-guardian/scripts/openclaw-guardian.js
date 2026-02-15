@@ -1,5 +1,5 @@
 /**
- * OpenClaw 进程守护脚本（改进版）
+ * OpenClaw 进程守护脚本
  * 功能：
  * 1. 监控 Gateway 状态
  * 2. 连续启动失败时自动恢复上一个备份的配置
@@ -10,40 +10,55 @@ const fs = require('fs');
 const path = require('path');
 
 const CONFIG = {
-  checkInterval: 10000,       // 10秒检查一次
-  gatewayPort: null,          // 从配置文件读取
+  // 配置文件路径（可选，setup.js 创建）
+  configFile: path.join(__dirname, 'config.json'),
+  
+  // 默认值（如果没有配置）
+  defaultPort: 18789,
+  defaultInterval: 30000,
+  maxRetries: 3,
+  
+  // 关键路径
   gatewayPath: 'C:\\Users\\visio\\AppData\\Roaming\\npm\\node_modules\\openclaw\\openclaw.mjs',
   logFile: path.join(__dirname, 'guardian-log.txt'),
   stateFile: path.join(__dirname, 'guardian-state.json'),
-  configFile: 'C:\\Users\\visio\\.openclaw\\openclaw.json',
-  backupDir: 'C:\\Users\\visio\\.openclaw\\backups',
-  maxRetries: 3,             // 连续失败超过此次数则恢复配置
+  configFilePath: 'C:\\Users\\visio\\.openclaw\\openclaw.json',
+  backupDir: 'C:\\Users\\visio\\.openclaw\\backups'
+};
+
+// 运行时配置
+let runtimeConfig = {
+  gatewayPort: CONFIG.defaultPort,
+  checkInterval: CONFIG.defaultInterval,
+  maxRetries: CONFIG.maxRetries,
+  gatewayPath: CONFIG.gatewayPath
 };
 
 /**
- * 从配置文件读取 Gateway 端口
+ * 加载配置（优先使用 setup.js 创建的配置）
  */
-function getGatewayPortFromConfig() {
-  try {
-    if (!fs.existsSync(CONFIG.configFile)) {
-      log('⚠️ 配置文件不存在，使用默认端口 18789');
-      return 18789;
+function loadConfig() {
+  // 检查是否有 setup.js 创建的配置文件
+  if (fs.existsSync(CONFIG.configFile)) {
+    try {
+      const userConfig = JSON.parse(fs.readFileSync(CONFIG.configFile, 'utf8'));
+      runtimeConfig.gatewayPort = userConfig.gatewayPort || CONFIG.defaultPort;
+      runtimeConfig.checkInterval = userConfig.checkInterval || CONFIG.defaultInterval;
+      runtimeConfig.maxRetries = userConfig.maxRetries || CONFIG.defaultRetries;
+      runtimeConfig.gatewayPath = userConfig.gatewayPath || CONFIG.gatewayPath;
+      log(`📋 已加载配置（端口: ${runtimeConfig.gatewayPort}，间隔: ${runtimeConfig.checkInterval/1000}秒）`);
+      return true;
+    } catch (e) {
+      logWarn(`配置文件损坏，使用默认值`);
     }
-    
-    const config = JSON.parse(fs.readFileSync(CONFIG.configFile, 'utf-8'));
-    const port = config?.gateway?.port;
-    
-    if (port && typeof port === 'number' && port > 0 && port < 65536) {
-      log(`📋 从配置文件读取端口: ${port}`);
-      return port;
-    } else {
-      log('⚠️ 配置文件中端口无效，使用默认端口 18789');
-      return 18789;
-    }
-  } catch (err) {
-    log(`⚠️ 读取配置文件失败: ${err.message}，使用默认端口 18789`);
-    return 18789;
   }
+  
+  // 提示用户运行 setup.js
+  logError(`未检测到配置！`);
+  log(`请先运行配置脚本:`);
+  log(`  cd skills/openclaw-guardian`);
+  log(`  node scripts/setup.js\n`);
+  return false;
 }
 
 let restarts = 0;
@@ -56,18 +71,38 @@ function log(msg) {
 }
 
 function getGatewayPid() {
-  const port = getGatewayPortFromConfig();
+  const port = runtimeConfig.gatewayPort;
+  
   return new Promise((resolve) => {
-    const cmd = 'powershell -Command "Get-NetTCPConnection -LocalPort ' + port + ' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess"';
-    exec(cmd, (err, stdout) => {
-      const pid = parseInt(stdout.trim());
-      resolve(isNaN(pid) ? null : pid);
+    // 方法1: 使用 netstat 获取 PID（更可靠）
+    const cmd1 = `netstat -ano | findstr :${port} | findstr LISTENING`;
+    
+    exec(cmd1, (err, stdout) => {
+      if (stdout && stdout.trim()) {
+        // 解析最后一段数字（PID）
+        const lines = stdout.trim().split('\n');
+        for (const line of lines) {
+          const parts = line.trim().split(/\s+/);
+          const pid = parseInt(parts[parts.length - 1]);
+          if (pid > 0) {
+            resolve(pid);
+            return;
+          }
+        }
+      }
+      
+      // 方法2: 如果 netstat 失败，尝试使用 Get-NetTCPConnection
+      const cmd2 = `powershell -Command "Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess"`;
+      exec(cmd2, (err2, stdout2) => {
+        const pid = parseInt(stdout2.trim());
+        resolve(isNaN(pid) ? null : pid);
+      });
     });
   });
 }
 
 function isGatewayHealthy() {
-  const port = getGatewayPortFromConfig();
+  const port = runtimeConfig.gatewayPort;
   return new Promise((resolve) => {
     const http = require('http');
     const req = http.get({
@@ -161,14 +196,15 @@ function loadState() {
 }
 
 async function startGateway() {
-  // 每次启动时从配置文件读取端口
-  const port = getGatewayPortFromConfig();
+  // 每次启动时使用配置的端口
+  const port = runtimeConfig.gatewayPort;
+  const gatewayPath = runtimeConfig.gatewayPath;
   
   log(`🚀 启动 Gateway (端口: ${port})...`);
   
   return new Promise((resolve) => {
     const proc = spawn('node', [
-      CONFIG.gatewayPath, 
+      gatewayPath, 
       'gateway', 
       '--port', String(port),
       '--token', '123123',
@@ -190,17 +226,35 @@ async function startGateway() {
       }
     });
     
-    // 等待 8 秒后检查
+    // 等待 15 秒后检查（给Gateway足够的启动时间）
     setTimeout(async () => {
+      log(`🔍 正在检查 Gateway 状态...`);
+      
+      // 先检查端口
       const pid = await getGatewayPid();
-      if (pid) {
-        log(`✅ Gateway 已启动，PID: ${pid}`);
-        resolve(true);
-      } else {
-        log('❌ 启动失败');
+      if (!pid) {
+        log(`❌ 启动失败 - 端口未监听`);
         resolve(false);
+        return;
       }
-    }, 8000);
+      
+      log(`📍 端口已监听，PID: ${pid}`);
+      
+      // 再检查健康状态（最多重试3次）
+      for (let i = 0; i < 3; i++) {
+        const healthy = await isGatewayHealthy();
+        if (healthy) {
+          log(`✅ Gateway 已启动并健康运行，PID: ${pid}`);
+          resolve(true);
+          return;
+        }
+        log(`⏳ 健康检查中... (${i+1}/3)`);
+        await new Promise(r => setTimeout(r, 2000)); // 等待2秒重试
+      }
+      
+      log(`⚠️ 端口已监听但健康检查失败，PID: ${pid}，仍视为启动成功`);
+      resolve(true); // 端口已监听就视为成功
+    }, 15000); // 15秒等待时间
   });
 }
 
@@ -210,6 +264,7 @@ async function check() {
   const pid = await getGatewayPid();
   
   if (pid) {
+    log(`📍 Gateway 已运行，PID: ${pid}`);
     const healthy = await isGatewayHealthy();
     if (healthy) {
       log('✅ 正常');
@@ -217,7 +272,11 @@ async function check() {
       saveState();
       return true;
     }
-    log('⚠️ 无响应');
+    log('⚠️ 无响应，但进程存在');
+    
+    // 进程存在但无响应，不计数为失败，只记录
+    saveState();
+    return true;
   } else {
     log('⚠️ 未运行');
   }
@@ -251,11 +310,17 @@ async function check() {
 }
 
 async function main() {
-  log('========== 守护进程启动 ==========');
+  log('========== OpenClaw 守护进程启动 ==========');
   
   // 确保备份目录存在
   if (!fs.existsSync(CONFIG.backupDir)) {
     fs.mkdirSync(CONFIG.backupDir, { recursive: true });
+  }
+  
+  // 加载配置（必须先运行 setup.js）
+  if (!loadConfig()) {
+    log('请先运行 setup.js 配置后再启动守护进程。');
+    process.exit(1);
   }
   
   // 加载之前的状态
@@ -267,10 +332,10 @@ async function main() {
   // 定期检查
   setInterval(async () => {
     await check();
-  }, CONFIG.checkInterval);
+  }, runtimeConfig.checkInterval);
   
   // 保持运行
-  log('守护进程运行中...');
+  log('守护进程运行中...（每 ' + (runtimeConfig.checkInterval/1000) + ' 秒检查一次）');
 }
 
 main().catch(err => {

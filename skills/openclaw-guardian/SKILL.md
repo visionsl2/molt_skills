@@ -4,9 +4,29 @@
 
 自动监控 OpenClaw Gateway 进程状态，在配置错误导致无法启动时自动恢复备份的配置。
 
+## 🛠️ 安装配置（首次使用）
+
+**重要**：首次使用前需要配置 OpenClaw 运行端口：
+
+```bash
+# 进入 skill 目录
+cd skills/openclaw-guardian
+
+# 运行安装配置（交互式引导）
+node scripts/setup.js
+```
+
+安装程序会要求您输入：
+- OpenClaw Gateway 端口（默认 18789）
+- Gateway 进程路径（自动检测）
+- 检查间隔时间（默认 30 秒）
+- 连续失败重试次数（默认 3 次）
+
+配置完成后会保存到 `scripts/config.json`，守护进程启动时会读取此配置。
+
 ## 功能
 
-1. **进程监控** - 每 10 秒检查 Gateway 状态
+1. **进程监控** - 每 30 秒检查 Gateway 状态
 2. **自动重启** - Gateway 意外退出时自动启动
 3. **配置备份** - 修改配置前自动备份
 4. **自动恢复** - 连续启动失败 > 3 次时，自动恢复上一个备份的配置
@@ -66,7 +86,7 @@ C:\Users\visio\.openclaw\backups\
 ## 工作流程
 
 ```
-1. 守护进程每 10 秒检查 Gateway 状态
+1. 守护进程每 30 秒检查 Gateway 状态
 2. 如果 Gateway 未运行或无响应 → 尝试启动
 3. 如果启动失败 → 连续失败计数 +1
 4. 如果连续失败 > 3 次 → 自动恢复上一个备份的配置
@@ -105,4 +125,21 @@ taskkill /F /IM node.exe /FI "WINDOWTITLE eq *openclaw-guardian*"
 
 ## 版本
 
+- **v1.1 (2026-02-16)** - 重大更新
+  - 修复端口检测问题（改用 netstat 获取 PID）
+  - 添加交互式安装配置流程（setup.js）
+  - 启动前自动检查配置文件
+  - 改进健康检查逻辑（多次重试）
+  - 避免误判导致的频繁重启
+
 - v1.0 (2026-02-13) - 初始版本
+
+## 发布更新
+
+当 skill 有更新时，运行：
+
+```bash
+scripts\publish-skill.bat openclaw-guardian
+```
+
+这会自动提交更改并推送到 GitHub 仓库。
