@@ -4,6 +4,12 @@
 
 自动监控 OpenClaw Gateway 进程状态，在配置错误导致无法启动时自动恢复备份的配置。
 
+## 📚 文档
+
+- [README.md](README.md) - 快速使用指南
+- [docs/README.md](docs/README.md) - 详细文档
+- [CHANGELOG.md](CHANGELOG.md) - 更新日志
+
 ## 🛠️ 安装配置（首次使用）
 
 **重要**：首次使用前需要配置 OpenClaw 运行端口：
