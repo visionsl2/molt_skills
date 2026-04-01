@@ -46,7 +46,10 @@ ollama pull nomic-embed-text
 OLLAMA_URL = "http://<远程IP>:<端口>/api/embeddings"
 # 示例: http://160.0.6.9:11434/api/embeddings
 ```
-> ⚠️ 远程 Ollama 服务器需允许外部访问（启动时加 `--host 0.0.0.0`）
+> ⚠️ 远程 Ollama 服务器需满足以下条件：
+> 1. 安装 `nomic-embed-text` 模型：`ollama pull nomic-embed-text`
+> 2. 允许外部访问：启动时加 `--host 0.0.0.0`
+> 3. 端口默认 `11434`，如有修改请同步更新 URL
 
 ---
 
