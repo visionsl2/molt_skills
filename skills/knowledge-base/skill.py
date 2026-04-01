@@ -190,12 +190,45 @@ def add_doc(title: str, content: str = "", keywords=None, source_type="text", fi
     return doc_id
 
 def search(query: str, top_k: int = 3) -> list:
-    """语义搜索"""
+    """
+    语义搜索 - 远程优先，本地兜底
+
+    流程：
+    1. 先搜索远程知识库
+    2. 远程有结果 → 返回远程结果
+    3. 远程无结果 → 搜索本地LanceDB
+    4. 本地有结果 → 返回本地结果
+    5. 都没有 → 返回空列表
+    """
+    # 1. 尝试远程知识库
+    try:
+        from knowledge_mcp import search as remote_search
+        remote_results = remote_search(query, top_k=top_k)
+        if isinstance(remote_results, dict) and remote_results.get('results'):
+            results = remote_results['results']
+            # 标记来源
+            for r in results:
+                r['_source'] = 'remote'
+            print(f"[知识库] 远程搜索到 {len(results)} 条结果")
+            return results
+    except Exception as e:
+        print(f"[知识库] 远程搜索失败: {e}，尝试本地...")
+
+    # 2. 远程没有，搜索本地
     try:
         emb = get_embedding(query)
-        return get_table().search(emb, vector_column_name="vector").limit(top_k).to_list()
-    except:
-        return []
+        local_results = get_table().search(emb, vector_column_name="vector").limit(top_k).to_list()
+        if local_results:
+            for r in local_results:
+                r['_source'] = 'local'
+            print(f"[知识库] 本地搜索到 {len(local_results)} 条结果")
+            return local_results
+    except Exception as e:
+        print(f"[知识库] 本地搜索失败: {e}")
+
+    # 3. 都没有
+    print(f"[知识库] 远程和本地都没有搜索结果")
+    return []
 
 def format_result(r: dict) -> dict:
     """格式化搜索结果"""
