@@ -1,7 +1,7 @@
 ---
 name: knowledge-base
 description: 知识库管理工具，支持本地和远程两种模式。触发方式：用户说"查知识库"、"搜一下"、"添加知识"、"存到知识库"等。
-version: 1.2.0
+version: 1.2.1
 github: https://github.com/visionsl2/molt_skills
 ---
 
@@ -28,12 +28,25 @@ SERVER_URL = "http://160.0.6.9:8877"  # IP: 160.0.6.9  端口: 8877
 pip install lancedb pyarrow requests python-docx pypdf openpyxl
 ```
 
-### 3. 启动本地 Ollama（Embedding模型）
+### 3. Ollama 配置（Embedding模型）
 
+本地和远程 Ollama 都支持，编辑 `skill.py` 修改地址：
+
+#### 本地 Ollama（默认）
+```python
+OLLAMA_URL = "http://localhost:11434/api/embeddings"
+```
 ```bash
 ollama serve
 ollama pull nomic-embed-text
 ```
+
+#### 远程 Ollama
+```python
+OLLAMA_URL = "http://<远程IP>:<端口>/api/embeddings"
+# 示例: http://160.0.6.9:11434/api/embeddings
+```
+> ⚠️ 远程 Ollama 服务器需允许外部访问（启动时加 `--host 0.0.0.0`）
 
 ---
 
@@ -129,6 +142,7 @@ python3 knowledge_mcp.py add "文档标题" "文档内容"
 
 | 版本 | 日期 | 内容 |
 |------|------|------|
+| v1.2.1 | 2026-04-01 | 新增远程Ollama配置说明 |
 | v1.2.0 | 2026-04-01 | 优化搜索流程：远程优先，本地兜底；添加配置说明 |
 | v1.1.0 | 2026-03-30 | 新增docx图片提取功能 |
 | v1.0.0 | 2026-03-04 | 初始版本 |
