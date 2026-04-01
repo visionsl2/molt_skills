@@ -1,3 +1,10 @@
+---
+name: knowledge-base
+description: 知识库管理工具，支持本地和远程两种模式。触发方式：用户说"查知识库"、"搜一下"、"添加知识"、"存到知识库"等。
+version: 1.1.0
+github: https://github.com/visionsl2/molt_skills
+---
+
 # knowledge-base Skill
 
 > 知识库Skill - 向量语义检索 + Word图片提取
