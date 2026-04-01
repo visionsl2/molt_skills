@@ -1,7 +1,7 @@
 ---
 name: knowledge-base
 description: 知识库管理工具，支持本地和远程两种模式。触发方式：用户说"查知识库"、"搜一下"、"添加知识"、"存到知识库"等。
-version: 1.2.1
+version: 1.3.2
 github: https://github.com/visionsl2/molt_skills
 ---
 
@@ -25,10 +25,17 @@ SERVER_URL = "http://160.0.6.9:8877"  # IP: 160.0.6.9  端口: 8877
 ### 2. 本地依赖安装
 
 ```bash
-pip install lancedb pyarrow requests python-docx pypdf openpyxl
+pip install lancedb pyarrow requests python-docx pypdf openpyxl tavily
 ```
 
-### 3. Ollama 配置（Embedding模型）
+### 3. agent-browser（浏览器自动化，用于联网搜索兜底）
+
+```bash
+npm install -g agent-browser
+agent-browser install  # 下载 Chrome
+```
+
+### 4. Ollama 配置（Embedding模型）
 
 本地和远程 Ollama 都支持，编辑 `skill.py` 修改地址：
 
@@ -53,21 +60,24 @@ OLLAMA_URL = "http://<远程IP>:<端口>/api/embeddings"
 
 ---
 
-## 🔍 搜索流程（远程优先，本地兜底）
+## 🔍 搜索流程（远程 → 本地 → 联网 → 浏览器）
 
 ```
-用户提问 → 远程知识库 search()
-              ↓ 有结果
-          返回结果给用户
-              ↓ 无结果
-          本地知识库 search()
-              ↓ 有结果
-          返回结果给用户
-              ↓ 无结果
-          提示"知识库暂无相关内容"
+用户提问
+   ↓
+远程知识库 160.0.6.9
+   ↓ 无结果
+本地 LanceDB
+   ↓ 无结果  
+联网搜索 (Tavily)
+   ↓ 无结果
+浏览器自动搜索
+   ↓ 无结果
+提示"暂无相关内容"
 ```
 
-> 📌 **默认策略**：优先使用远程知识库，远程没有匹配内容时才会调用本地知识库
+> 📌 **默认策略**：远程 → 本地 → 联网 → 浏览器  
+> 📌 **结果标记**：`source` = `remote` / `local` / `web` / `browser`
 
 ---
 
@@ -145,6 +155,9 @@ python3 knowledge_mcp.py add "文档标题" "文档内容"
 
 | 版本 | 日期 | 内容 |
 |------|------|------|
+| v1.3.2 | 2026-04-01 | 新增浏览器自动搜索兜底；更新依赖说明 |
+| v1.3.1 | 2026-04-01 | 新增浏览器自动搜索兜底 |
+| v1.3.0 | 2026-04-01 | 新增联网搜索兜底；结果标记 remote/local/web |
 | v1.2.1 | 2026-04-01 | 新增远程Ollama配置说明 |
 | v1.2.0 | 2026-04-01 | 优化搜索流程：远程优先，本地兜底；添加配置说明 |
 | v1.1.0 | 2026-03-30 | 新增docx图片提取功能 |

@@ -191,14 +191,13 @@ def add_doc(title: str, content: str = "", keywords=None, source_type="text", fi
 
 def search(query: str, top_k: int = 3) -> list:
     """
-    语义搜索 - 远程优先，本地兜底
+    语义搜索 - 默认远程，本地兜底，联网备选
 
     流程：
-    1. 先搜索远程知识库
-    2. 远程有结果 → 返回远程结果
-    3. 远程无结果 → 搜索本地LanceDB
-    4. 本地有结果 → 返回本地结果
-    5. 都没有 → 返回空列表
+    1. 先搜索远程知识库（160.0.6.9）
+    2. 远程无结果 → 搜索本地 LanceDB
+    3. 本地也无结果 → 调用联网搜索（Tavily）
+    4. 结果标记来源：remote / local / web
     """
     # 1. 尝试远程知识库
     try:
@@ -206,7 +205,6 @@ def search(query: str, top_k: int = 3) -> list:
         remote_results = remote_search(query, top_k=top_k)
         if isinstance(remote_results, dict) and remote_results.get('results'):
             results = remote_results['results']
-            # 标记来源
             for r in results:
                 r['_source'] = 'remote'
             print(f"[知识库] 远程搜索到 {len(results)} 条结果")
@@ -226,8 +224,77 @@ def search(query: str, top_k: int = 3) -> list:
     except Exception as e:
         print(f"[知识库] 本地搜索失败: {e}")
 
-    # 3. 都没有
-    print(f"[知识库] 远程和本地都没有搜索结果")
+    # 3. 本地也没有，联网搜索
+    print(f"[知识库] 远程和本地都没有结果，尝试联网搜索...")
+    try:
+        import tavily
+        tavily_client = tavily.TavilyClient(api_key=os.environ.get("TAVILY_API_KEY", ""))
+        web_results = tavily_client.search(query=query, max_results=top_k)
+        if web_results.get('results'):
+            results = []
+            for r in web_results['results']:
+                results.append({
+                    'title': r.get('title', ''),
+                    'content': r.get('content', ''),
+                    'url': r.get('url', ''),
+                    '_source': 'web'
+                })
+            print(f"[知识库] 联网搜索到 {len(results)} 条结果")
+            return results
+    except Exception as e:
+        print(f"[知识库] 联网搜索失败: {e}，尝试浏览器...")
+
+    # 4. 联网也没有，用浏览器自动搜索
+    print(f"[知识库] 尝试浏览器搜索...")
+    try:
+        import subprocess
+        import json
+        import shutil
+
+        # 检查 agent-browser 是否可用
+        if not shutil.which("agent-browser"):
+            print(f"[知识库] agent-browser 未安装，跳过浏览器搜索")
+            raise Exception("agent-browser not found")
+
+        # 编码查询参数
+        encoded_query = requests.utils.quote(query)
+        search_url = f"https://www.google.com/search?q={encoded_query}&num={top_k}"
+
+        # 用 agent-browser 打开搜索页面并获取结果（链式命令）
+        cmd = f'agent-browser open "{search_url}" && agent-browser wait --load networkidle && agent-browser get text body'
+        result = subprocess.run(
+            cmd, shell=True, capture_output=True, text=True, timeout=60,
+            env={**os.environ, "AGENT_BROWSER_HEADLESS": "1"}
+        )
+
+        page_text = result.stdout if result.returncode == 0 else ""
+
+        # 简单解析搜索结果
+        results = []
+        lines = page_text.split('\n')
+        for line in lines:
+            line = line.strip()
+            if line and 20 < len(line) < 300:
+                results.append({
+                    'title': line[:100],
+                    'content': line[:200],
+                    'url': search_url,
+                    '_source': 'browser'
+                })
+            if len(results) >= top_k:
+                break
+
+        if results:
+            print(f"[知识库] 浏览器搜索到 {len(results)} 条结果")
+            return results
+        else:
+            print(f"[知识库] 浏览器搜索无结果")
+
+    except Exception as e:
+        print(f"[知识库] 浏览器搜索失败: {e}")
+
+    # 5. 都没有
+    print(f"[知识库] 所有知识库都没有搜索结果")
     return []
 
 def format_result(r: dict) -> dict:
@@ -237,6 +304,8 @@ def format_result(r: dict) -> dict:
         "overview": r.get("content", "")[:200],
         "content": r.get("content", ""),
         "images": r.get("images", []),
+        "source": r.get("_source", "unknown"),  # remote / local / web / browser
+        "url": r.get("url", ""),
         "has_images": len(r.get("images", [])) > 0
     }
 
